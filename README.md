@@ -57,15 +57,15 @@ cooperating nodes:
 ```
         SENSES + BODY (on the robot)                    BRAIN (server / cloud)
    ┌───────────────────────────────────────────┐    ┌──────────────────────────────┐
-   │  XIAO ESP32-S3 Sense  ──HTTP /capture───►  │    │  Python backend (FastAPI)    │
-   │  (camera "vision node")                    │    │   • pulls camera frames      │
-   │                                            │    │   • queries a vision LLM     │
-   │  ESP32 DevKit v1  ◄──WebSocket JSON──►     │◄──►│   • returns motion commands  │
-   │  (main controller)                         │    │   • STT (voice in)           │
-   │   • 2× N20 motors + encoders (PID)         │    │   • TTS (voice out)          │
-   │   • MPU6050 IMU (heading / tilt / impact)  │    │   • holds all API keys       │
-   │   • SHARP IR forward distance (hard stop)  │    └──────────────────────────────┘
-   │   • INMP441 mic / MAX98357 + speaker       │
+   │  XIAO ESP32-S3 Sense  ──HTTP /capture───► │    │  Python backend (FastAPI)    │
+   │  (camera "vision node")                   │    │   • pulls camera frames      │
+   │                                           │    │   • queries a vision LLM     │
+   │  ESP32 DevKit v1  ◄──WebSocket JSON──►    │◄──►│   • returns motion commands  │
+   │  (main controller)                        │    │   • STT (voice in)           │
+   │   • 2× N20 motors + encoders (PID)        │    │   • TTS (voice out)          │
+   │   • MPU6050 IMU (heading / tilt / impact) │    │   • holds all API keys       │
+   │   • SHARP IR forward distance (hard stop) │    └──────────────────────────────┘
+   │   • INMP441 mic / MAX98357 + speaker      │
    └───────────────────────────────────────────┘
 ```
 
