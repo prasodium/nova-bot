@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Secrets / config
+.env
+*.local
+secrets.*
+
+# PlatformIO / build
+.pio/
+.pioenvs/
+.piolibdeps/
+build/
+*.bin
+*.elf
+
+# Captured media / logs
+captures/
+*.wav
+*.jpg
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

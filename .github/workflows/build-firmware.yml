@@ -1,0 +1,91 @@
+name: Build firmware (flashable .bin)
+
+# Builds both ESP32 firmwares in the cloud and publishes single merged .bin files
+# you flash at offset 0x0 with https://espressif.github.io/esptool-js/
+#
+# Triggers:
+#   - every push to main      -> binaries uploaded as build "Artifacts"
+#   - pushing a tag like v1.0  -> binaries also attached to a GitHub Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:          # lets you run it manually from the Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PlatformIO + esptool
+        # esptool is pinned to 4.x: v5 renamed the underscore commands
+        # (merge_bin -> merge-bin) and changed several flags.
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio "esptool~=4.8"
+
+      # ---- Optional: inject Wi-Fi / backend from repo Secrets (keeps them out of git) ----
+      # Set these under Settings > Secrets and variables > Actions if you don't want
+      # to commit credentials in config.h. If unset, the config.h defaults are used.
+      - name: Compose build flags from secrets
+        id: flags
+        run: |
+          F=""
+          [ -n "${{ secrets.WIFI_SSID }}" ]    && F="$F -DWIFI_SSID='\"${{ secrets.WIFI_SSID }}\"'"
+          [ -n "${{ secrets.WIFI_PASS }}" ]    && F="$F -DWIFI_PASS='\"${{ secrets.WIFI_PASS }}\"'"
+          [ -n "${{ secrets.BACKEND_HOST }}" ] && F="$F -DBACKEND_HOST='\"${{ secrets.BACKEND_HOST }}\"'"
+          echo "build_flags=$F" >> "$GITHUB_OUTPUT"
+
+      - name: Build main controller (ESP32 DevKit v1)
+        env:
+          PLATFORMIO_BUILD_FLAGS: ${{ steps.flags.outputs.build_flags }}
+        run: pio run -d firmware/main_controller
+
+      - name: Build vision node (XIAO ESP32-S3 Sense)
+        env:
+          PLATFORMIO_BUILD_FLAGS: ${{ steps.flags.outputs.build_flags }}
+        run: pio run -d firmware/vision_node
+
+      - name: Merge into single flashable .bin (flash each at 0x0)
+        run: |
+          mkdir -p dist
+          BOOTAPP=$(find ~/.platformio/packages -name boot_app0.bin | head -1)
+          echo "boot_app0: $BOOTAPP"
+
+          MC=firmware/main_controller/.pio/build/esp32dev
+          python -m esptool --chip esp32 merge_bin \
+            -o dist/main_controller-esp32-merged.bin \
+            --flash_mode keep --flash_freq keep --flash_size 4MB \
+            0x1000  "$MC/bootloader.bin" \
+            0x8000  "$MC/partitions.bin" \
+            0xe000  "$BOOTAPP" \
+            0x10000 "$MC/firmware.bin"
+
+          VN=firmware/vision_node/.pio/build/seeed_xiao_esp32s3
+          python -m esptool --chip esp32s3 merge_bin \
+            -o dist/vision_node-esp32s3-merged.bin \
+            --flash_mode keep --flash_freq keep --flash_size 8MB \
+            0x0     "$VN/bootloader.bin" \
+            0x8000  "$VN/partitions.bin" \
+            0xe000  "$BOOTAPP" \
+            0x10000 "$VN/firmware.bin"
+
+          ls -la dist
+
+      - name: Upload binaries as build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-bin
+          path: dist/*.bin
+
+      - name: Attach binaries to Release (on version tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.bin

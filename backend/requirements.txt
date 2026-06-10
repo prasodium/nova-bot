@@ -1,0 +1,17 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+websockets==14.1
+httpx==0.28.1
+anthropic==0.42.0
+python-dotenv==1.0.1
+pydantic==2.10.4
+numpy==2.2.1
+
+# --- Voice OUT (TTS). pyttsx3 is the no-download default. ---
+pyttsx3==2.98
+# On Linux pyttsx3 needs espeak:  sudo apt install espeak
+# Optional higher-quality neural TTS instead (set TTS_MODE=piper):
+# piper-tts==1.2.0
+
+# --- Voice IN (STT). Only needed if STT_MODE=whisper + ENABLE_MIC_STREAMING=1 ---
+# faster-whisper==1.1.0
