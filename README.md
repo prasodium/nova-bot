@@ -65,7 +65,8 @@ cooperating nodes:
    │   • 2× N20 motors + encoders (PID)        │    │   • TTS (voice out)          │
    │   • MPU6050 IMU (heading / tilt / impact) │    │   • holds all API keys       │
    │   • SHARP IR forward distance (hard stop) │    └──────────────────────────────┘
-   │   • INMP441 mic / MAX98357 + speaker      │
+   │   • INMP441 mic / MAX98357 + speaker     
+    │
    └───────────────────────────────────────────┘
 ```
 

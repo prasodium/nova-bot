@@ -2,10 +2,10 @@
 // ---------- WiFi ----------
 // Overridable at build time with -DWIFI_SSID='"..."' (e.g. CI secrets).
 #ifndef WIFI_SSID
-#define WIFI_SSID  "YOUR_WIFI_SSID"
+#define WIFI_SSID  "prash"
 #endif
 #ifndef WIFI_PASS
-#define WIFI_PASS  "YOUR_WIFI_PASSWORD"
+#define WIFI_PASS  "pussycat"
 #endif
 
 // ---------- HTTP server ----------

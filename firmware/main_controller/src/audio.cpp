@@ -50,6 +50,7 @@ void audio::beginOutput() {
   cfg.use_apll = false;
 
   i2s_pin_config_t pins = {};
+  pins.mck_io_num = I2S_PIN_NO_CHANGE;   // FIX: prevent GPIO0 MCLK conflict
   pins.bck_io_num = PIN_I2S_AMP_BCLK;
   pins.ws_io_num  = PIN_I2S_AMP_LRC;
   pins.data_out_num = PIN_I2S_AMP_DIN;
@@ -78,6 +79,7 @@ void audio::beginInput() {
   cfg.use_apll = false;
 
   i2s_pin_config_t pins = {};
+  pins.mck_io_num = I2S_PIN_NO_CHANGE;   // FIX: prevent GPIO0 MCLK conflict
   pins.bck_io_num = PIN_I2S_MIC_SCK;
   pins.ws_io_num  = PIN_I2S_MIC_WS;
   pins.data_out_num = I2S_PIN_NO_CHANGE;

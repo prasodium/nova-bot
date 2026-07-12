@@ -8,15 +8,15 @@
 // These can be overridden at build time (e.g. from GitHub Actions secrets)
 // with -DWIFI_SSID='"..."'. Otherwise the defaults below are used.
 #ifndef WIFI_SSID
-#define WIFI_SSID        "YOUR_WIFI_SSID"
+#define WIFI_SSID        "HCL"
 #endif
 #ifndef WIFI_PASS
-#define WIFI_PASS        "YOUR_WIFI_PASSWORD"
+#define WIFI_PASS        "pussycat"
 #endif
 
 // ---------- Backend (the Python brain) ----------
 #ifndef BACKEND_HOST
-#define BACKEND_HOST     "192.168.1.100"   // PC/Pi running backend/server.py
+#define BACKEND_HOST     "192.168.232.102"   // PC/Pi running backend/server.py
 #endif
 #define BACKEND_PORT     8000
 #define BACKEND_WS_PATH  "/ws/robot"
