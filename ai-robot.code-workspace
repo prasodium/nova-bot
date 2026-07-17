@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "main_controller",
+			"path": "firmware/main_controller"
+		}
+	],
+	"settings": {}
+}

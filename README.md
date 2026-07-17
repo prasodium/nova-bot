@@ -10,7 +10,7 @@ decides what to do next.
 
 ---
 
-## Table of Contents
+## Table of Content 
 
 1. [Capabilities](#capabilities)
 2. [System Overview](#system-overview)
