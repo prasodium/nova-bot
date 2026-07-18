@@ -5,13 +5,18 @@
 // =====================================================================
 
 // ---------- WiFi ----------
-// These can be overridden at build time (e.g. from GitHub Actions secrets)
-// with -DWIFI_SSID='"..."'. Otherwise the defaults below are used.
+// Real credentials live in secrets.h (gitignored, not committed).
+// Copy secrets.h.example to secrets.h and fill in your own values.
+// Can also be overridden at build time (e.g. from GitHub Actions secrets)
+// with -DWIFI_SSID='"..."'.
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
 #ifndef WIFI_SSID
-#define WIFI_SSID        "HCL"
+#define WIFI_SSID        "YOUR_WIFI_SSID"
 #endif
 #ifndef WIFI_PASS
-#define WIFI_PASS        "pussycat"
+#define WIFI_PASS        "YOUR_WIFI_PASSWORD"
 #endif
 
 // ---------- Backend (the Python brain) ----------
