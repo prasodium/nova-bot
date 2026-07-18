@@ -8,9 +8,9 @@ def _f(key, default): return float(os.getenv(key, default))
 def _i(key, default): return int(os.getenv(key, default))
 def _b(key, default): return os.getenv(key, str(default)).lower() in ("1", "true", "yes", "on")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-AI_MODEL          = os.getenv("AI_MODEL", "claude-sonnet-4-6")
-AI_MAX_TOKENS     = _i("AI_MAX_TOKENS", 600)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+AI_MODEL       = os.getenv("AI_MODEL", "gpt-4o-mini")
+AI_MAX_TOKENS  = _i("AI_MAX_TOKENS", 600)
 
 VISION_NODE_URL   = os.getenv("VISION_NODE_URL", "http://192.168.1.50").rstrip("/")
 HOST              = os.getenv("HOST", "0.0.0.0")

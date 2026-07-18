@@ -22,5 +22,8 @@ def stop() -> dict:
 def speak(text: str) -> dict:
     return {"type": "cmd", "cmd_id": _id(), "action": "speak", "text": text}
 
+def mood(name: str) -> dict:
+    return {"type": "cmd", "cmd_id": _id(), "action": "mood", "mood": name}
+
 def config(**kwargs) -> dict:
     return {"type": "cmd", "action": "config", **kwargs}

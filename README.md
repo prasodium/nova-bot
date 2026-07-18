@@ -27,7 +27,7 @@ decides what to do next.
 ## Capabilities
 
 - **Perception** — captures the scene through a XIAO ESP32-S3 Sense camera node.
-- **Reasoning** — a cloud vision LLM (default: Claude Sonnet) interprets each frame
+- **Reasoning** — a cloud vision LLM (default: OpenAI GPT-4o-mini) interprets each frame
   together with live telemetry and the current mission.
 - **Navigation** — closed-loop wheel velocity (quadrature encoders + PID) and
   heading control from the MPU6050 IMU.
@@ -144,7 +144,7 @@ Detailed bring-up, tuning, and troubleshooting: [`docs/SETUP.md`](docs/SETUP.md)
 | Wi-Fi SSID / password | `firmware/*/include/config.h` | Both boards; can be injected from CI secrets |
 | Backend host / port | `firmware/main_controller/include/config.h` | WebSocket target |
 | Vision node URL | `backend/.env` (`VISION_NODE_URL`) | Backend pulls frames from here |
-| AI model / API key | `backend/.env` | Default model: `claude-sonnet-4-6` |
+| AI model / API key | `backend/.env` | Default model: `gpt-4o-mini` |
 | Motor / encoder / I2S pins | `firmware/main_controller/include/config.h` | Verify against `docs/WIRING.md` |
 | Motor driver type | `firmware/main_controller/include/config.h` | TB6612FNG (default), DRV8833, L298N |
 | PID gains, speed caps, safety thresholds | `firmware/main_controller/include/config.h` | Tune on the bench, wheels raised |

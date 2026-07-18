@@ -14,6 +14,7 @@
 | 8 | MAX98357A | I2S Class-D amplifier (voice output) | I2S |
 | 9 | 2 W speaker | Audio output element | via MAX98357 |
 | 10 | Battery pack (e.g. 2S Li-ion, 6–8 V) | Motor supply | — |
+| 11 | SH1106 1.3" OLED (128×64) | Status display: WiFi/backend link, heading, distance, listening indicator | I2C (shared with MPU6050) |
 
 ## Motor Driver Options
 

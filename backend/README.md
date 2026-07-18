@@ -30,7 +30,7 @@ A FastAPI service that:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env     # add your ANTHROPIC_API_KEY + node IPs
+cp .env.example .env     # add your OPENAI_API_KEY + node IPs
 python server.py
 ```
 

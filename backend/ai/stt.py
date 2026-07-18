@@ -34,7 +34,11 @@ def _transcribe_sync(pcm16: bytes, sample_rate: int) -> str:
         n_out = int(round(audio.size * 16000 / sample_rate))
         audio = np.interp(np.linspace(0, audio.size - 1, n_out),
                           np.arange(audio.size), audio).astype("float32")
-    segments, _ = _load().transcribe(audio, language=None, vad_filter=True)
+    # language="en" skips language auto-detection, and beam_size=1 (greedy)
+    # skips the wide beam search — together these were ~2.4s of pure overhead
+    # per utterance versus ~0.02s, independent of model size. Fine for short
+    # command phrases; if you need other languages, drop language="en".
+    segments, _ = _load().transcribe(audio, language="en", beam_size=1, vad_filter=True)
     return " ".join(s.text.strip() for s in segments).strip()
 
 async def transcribe(pcm16: bytes, sample_rate: int = 16000) -> str:

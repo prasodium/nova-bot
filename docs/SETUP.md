@@ -9,7 +9,7 @@ End-to-end bring-up: flash both boards, start the backend, then drive.
   binaries from a browser instead, see [`FLASHING.md`](FLASHING.md).
 - Python 3.10+ for the backend.
 - All three nodes on the **same Wi-Fi network**.
-- An API key for your LLM provider (default: Anthropic).
+- An API key for your LLM provider (default: OpenAI).
 
 ## 1. Flash the vision node (XIAO ESP32-S3 Sense)
 
@@ -47,9 +47,9 @@ source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
 # edit .env:
-#   ANTHROPIC_API_KEY=sk-ant-...
+#   OPENAI_API_KEY=sk-...
 #   VISION_NODE_URL=http://<vision-ip>
-#   AI_MODEL=claude-sonnet-4-6
+#   AI_MODEL=gpt-4o-mini
 python server.py
 ```
 

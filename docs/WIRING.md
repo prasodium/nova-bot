@@ -51,6 +51,20 @@
 | GND | GND |
 | INT | 23 (optional, unused) |
 
+### SH1106 1.3" I2C OLED (128×64) — status display
+
+| OLED pin | ESP32 GPIO | Note |
+|----------|-----------|------|
+| SDA | 21 | Shared with the MPU6050 — different I2C address, no conflict |
+| SCL | 22 | Shared with the MPU6050 |
+| VCC | 3V3 | |
+| GND | GND | |
+
+> Default I2C address is `0x3C` (`OLED_I2C_ADDR` in `config.h`); some modules
+> ship at `0x3D` instead — change it there if the screen stays blank. Not
+> required for the robot to function — `display::begin()` just logs a warning
+> and everything else keeps working if it isn't detected.
+
 ### SHARP GP2Y0A41SK0F IR distance sensor (analog, 4–30 cm)
 
 | Sensor wire | ESP32 | Note |

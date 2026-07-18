@@ -14,6 +14,7 @@
 #include "comms.h"
 #include "pid.h"
 #include "distance.h"
+#include "display.h"
 
 // ---- control state ----
 Pid pidL(PID_KP, PID_KI, PID_KD);
@@ -40,6 +41,13 @@ bool  gBlocked = false;              // latched "obstacle ahead" flag for the br
 
 uint32_t lastCtrlUs = 0;
 uint32_t lastTeleMs = 0;
+uint32_t lastDispMs = 0;
+bool  gListening = false;   // mic VAD currently capturing an utterance
+
+// ---- face / mood state ----
+display::Mood gMood = display::Mood::NEUTRAL;
+uint32_t gMoodUntilMs = 0;   // 0 = no commanded mood pending; falls back to auto
+bool  gWasShaking = false;   // edge-detects imu::shaking() to fire the reaction once
 
 // ---- helpers ----
 float angleErr(float target, float current) {
@@ -51,6 +59,9 @@ float angleErr(float target, float current) {
 
 void applyMotion(float dt) {
   if (gTiltFault) { motors::stop(); return; }
+  // Being picked up/shaken — driving the wheels serves no purpose and the
+  // stall/impact reflexes below would just fight the person holding it.
+  if (imu::shaking()) { motors::stop(); return; }
 
   // Auto-stop if a timed drive expired or command watchdog tripped.
   uint32_t now = millis();
@@ -113,8 +124,19 @@ void applyMotion(float dt) {
   float spL, spR;
   encoders::update(dt, spL, spR);     // measured rpm
   gLeftRpm = spL; gRightRpm = spR;
-  float tgtL = leftCmd  * TARGET_RPM_AT_FULL;
-  float tgtR = rightCmd * TARGET_RPM_AT_FULL;
+
+  // True idle: no commanded motion. Hard-stop directly instead of running
+  // PID against it — unwired/noisy encoders (GPIO34-39 float with no internal
+  // pull-up and read spurious ticks) would otherwise read a phantom nonzero
+  // rpm at rest, and the PID would "correct" for it by spinning the wheels.
+  if (leftCmd == 0.0f && rightCmd == 0.0f) {
+    pidL.reset(); pidR.reset();
+    motors::stop();
+    return;
+  }
+
+  float tgtL = constrain(leftCmd  * TARGET_RPM_AT_FULL, -MAX_WHEEL_RPM, MAX_WHEEL_RPM);
+  float tgtR = constrain(rightCmd * TARGET_RPM_AT_FULL, -MAX_WHEEL_RPM, MAX_WHEEL_RPM);
 
   float outL = pidL.step(tgtL, spL, dt);   // -1..1
   float outR = pidR.step(tgtR, spR, dt);
@@ -155,6 +177,10 @@ void handleCommand(const String &text) {
     // Minimal on-device feedback. Rich TTS audio is streamed by the backend
     // (play_audio path) — see docs/PROTOCOL.md.
     audio::beep(660, 80); audio::beep(990, 120);
+  } else if (!strcmp(action, "mood")) {
+    const char *moodName = doc["mood"] | "neutral";
+    gMood = display::moodFromName(moodName);
+    gMoodUntilMs = millis() + MOOD_HOLD_MS;
   } else if (!strcmp(action, "config")) {
     if (doc["max_speed"].is<float>())      gMaxSpeed = doc["max_speed"];
     if (doc["cmd_timeout_ms"].is<int>())   gCmdTimeoutMs = doc["cmd_timeout_ms"];
@@ -188,12 +214,25 @@ void setup() {
   audio::beginInput();
   audio::beep(880, 120);          // "I'm alive" chirp
 
-  if (!imu::begin()) Serial.println("[imu] MPU6050 NOT found — check wiring!");
-  else Serial.println("[imu] ok");
+  // imu::begin() must run first — it owns the initial Wire.begin() on this
+  // bus. Calling it a second time (e.g. from display::begin() running first)
+  // was observed to corrupt I2C transactions (flooded "i2cWriteReadNonStop"
+  // errors), so display always comes up after imu, matching the working order.
+  bool imuOk = imu::begin();
+  if (!imuOk) Serial.println("[imu] MPU6050 NOT found — check wiring!");
+
+  if (!display::begin()) Serial.println("[oled] SH1106 NOT found — check wiring!");
+
+  display::showBoot("Calibrating IMU", "Keep me still...");
+
+  if (imuOk) { imu::calibrate(); Serial.println("[imu] ok"); }
+
+  display::showBoot("AI Robot", "WiFi connecting...");
 
   comms::onCommand(handleCommand);
   comms::onBinary(handleBinary);
   comms::begin();
+  display::showBoot("AI Robot", ("IP " + comms::localIP()).c_str());
 
   lastCtrlUs = micros();
   gLastCmdMs = millis();
@@ -211,6 +250,15 @@ void loop() {
     gTiltFault = imu::tilted();
     if (gTiltFault) { motors::stop(); }
     applyMotion(dt);
+
+    bool isShaking = imu::shaking();
+    if (isShaking && !gWasShaking) {
+      audio::dizzySound();
+      gMood = display::Mood::DIZZY;
+      gMoodUntilMs = millis() + SHAKE_HOLD_MS;
+      comms::sendEvent("shaken", true);   // backend speaks the complaint
+    }
+    gWasShaking = isShaking;
   }
 
   uint32_t nowMs = millis();
@@ -227,10 +275,21 @@ void loop() {
   static bool   speaking = false;
   static uint32_t lastVoiceMs = 0;
   static int16_t mic[MIC_CHUNK_SAMPLES];
-  size_t n = audio::readMic(mic, MIC_CHUNK_SAMPLES);
-  if (n) {
+  size_t n = audio::readMic(mic, MIC_CHUNK_SAMPLES);   // always drain the I2S RX buffer
+  // No acoustic echo cancellation on this hardware: while the speaker is
+  // playing, the mic picks up our own TTS output and would otherwise
+  // transcribe it as a new command (observed: robot heard its own "I love
+  // you too" reply and echoed off itself). Mute capture while speaking.
+  bool muted = audio::isPlaying();
+  if (muted && speaking) {
+    speaking = false;
+    comms::sendEvent("voice_end", true);
+  }
+  if (n && !muted) {
     int32_t peak = 0;
     for (size_t i = 0; i < n; i++) { int32_t a = abs(mic[i]); if (a > peak) peak = a; }
+    static uint32_t lastDbgMs = 0;   // TEMP: remove once mic pipeline is confirmed good end-to-end
+    if (nowMs - lastDbgMs > 300) { lastDbgMs = nowMs; Serial.printf("[mic] peak=%ld\n", (long)peak); }
     bool loud = peak > MIC_VAD_THRESHOLD;
     if (loud) {
       if (!speaking) { speaking = true; comms::sendEvent("voice_audio", true); }
@@ -244,5 +303,25 @@ void loop() {
       }
     }
   }
+  gListening = speaking;
 #endif
+
+  if (nowMs - lastDispMs >= 1000 / OLED_REFRESH_HZ) {
+    lastDispMs = nowMs;
+    // Being shaken wins over everything else; then other safety states; then
+    // an explicit commanded mood; otherwise fall back to neutral once expired.
+    display::Mood effectiveMood;
+    if (imu::shaking())                               effectiveMood = display::Mood::DIZZY;
+    else if (gTiltFault)                              effectiveMood = display::Mood::SURPRISED;
+    else if (gBlocked)                                effectiveMood = display::Mood::ANGRY;
+    else if (gMoodUntilMs && nowMs < gMoodUntilMs)     effectiveMood = gMood;
+    else                                               { effectiveMood = display::Mood::NEUTRAL; gMoodUntilMs = 0; }
+    display::showFace(effectiveMood, gListening, comms::connected());
+
+    static uint32_t lastSnoreMs = 0;
+    if (effectiveMood == display::Mood::SLEEPY && nowMs - lastSnoreMs >= SNORE_INTERVAL_MS) {
+      lastSnoreMs = nowMs;
+      audio::snoreSound();
+    }
+  }
 }

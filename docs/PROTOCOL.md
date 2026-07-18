@@ -54,7 +54,14 @@ follow this convention.
 { "type": "event", "name": "blocked",     "value": true }
 { "type": "event", "name": "voice_audio", "value": true }
 { "type": "event", "name": "voice_end",   "value": true }
+{ "type": "event", "name": "shaken",      "value": true }
 ```
+
+`shaken` fires once when the IMU detects several rapid jolts in a short window
+(`SHAKE_JOLT_COUNT` within `SHAKE_WINDOW_MS`) — being picked up and shaken, as
+opposed to a single sharp `impact`. The firmware reacts locally (dizzy spiral
+eyes + a wobble sound, motors stopped) immediately; the backend responds by
+speaking a complaint (see `server.py`'s handler for this event).
 
 `voice_audio` marks the start of an utterance; the mic stream then follows as
 binary frames until a `voice_end` marker (only with `ENABLE_MIC_STREAMING=1`).
@@ -114,6 +121,19 @@ The firmware plays a short chirp. Rich speech uses `play_audio` instead.
 
 Sent immediately before streaming TTS audio. The firmware pauses motion (safety
 reflexes keep running) and plays the binary frames that follow.
+
+### `cmd: mood` — set the OLED face expression
+
+```json
+{ "type": "cmd", "cmd_id": 47, "action": "mood", "mood": "happy" }
+```
+
+`mood` is one of `neutral | happy | angry | love | shy | sad | sleepy | surprised | dizzy`
+(unknown values fall back to `neutral`). Commanded moods hold for `MOOD_HOLD_MS`
+(default 6 s) before reverting to neutral. Safety states always win over a
+commanded mood, highest priority first: being shaken (`dizzy`) > `tilt_fault`
+(`surprised`) > `blocked` (`angry`) > whatever was last commanded. No-op if no
+SH1106 display is wired.
 
 ### `cmd: config` — runtime configuration
 

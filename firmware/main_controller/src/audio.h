@@ -15,6 +15,11 @@ namespace audio {
   // apart from brief waits for buffer space).
   void beep(int freq_hz = 880, int ms = 150);
 
+  // Wobbly "woop-woop" tone sequence for the dizzy/shaken reaction.
+  void dizzySound();
+  // Soft low inhale/exhale tone, played periodically while sleepy.
+  void snoreSound();
+
   // Queue raw signed-16-bit mono PCM bytes at AMP_SAMPLE_RATE for playback.
   // NON-BLOCKING: returns the number of bytes accepted (excess is dropped
   // if the ring buffer is full). Safe to call from the WebSocket callback.

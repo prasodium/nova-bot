@@ -21,7 +21,7 @@
 
 // ---------- Backend (the Python brain) ----------
 #ifndef BACKEND_HOST
-#define BACKEND_HOST     "192.168.232.102"   // PC/Pi running backend/server.py
+#define BACKEND_HOST     "192.168.0.102"   // PC/Pi running backend/server.py
 #endif
 #define BACKEND_PORT     8000
 #define BACKEND_WS_PATH  "/ws/robot"
@@ -45,6 +45,10 @@
 #define PWM_FREQ_HZ   20000   // 20 kHz = inaudible
 #define PWM_RES_BITS  10      // 0..1023
 #define PWM_MAX       ((1 << PWM_RES_BITS) - 1)
+// Hard ceiling on the actual duty sent to the motor driver, out of PWM_MAX —
+// a full-scale (-1..1) speed command still only ever reaches this, regardless
+// of what the PID/feed-forward math upstream computes.
+#define PWM_MAX_DUTY  500
 
 // ---------- Encoders ----------
 #define PIN_ENC_LA   34   // input-only, needs ext pull-up if open-collector
@@ -60,10 +64,25 @@
 #define PIN_I2C_SCL  22
 #define TILT_LIMIT_DEG   45.0f   // beyond this -> emergency motor cutoff
 
+// ---------- SH1106 1.3" I2C OLED (128x64) — status display ----------
+// Shares the I2C bus above (GPIO21 SDA / GPIO22 SCL) with the MPU6050; a
+// different bus address, so no pin conflict. If the screen stays blank,
+// try 0x3D — some modules ship at that address instead of 0x3C.
+#define ENABLE_OLED       1
+#define OLED_I2C_ADDR     0x3C
+#define OLED_WIDTH        128
+#define OLED_HEIGHT       64
+#define OLED_REFRESH_HZ   4      // keep this low; I2C display writes aren't free
+#define MOOD_HOLD_MS      6000   // an explicitly commanded mood reverts to auto after this long
+#define BLINK_MIN_MS      3000   // idle "alive" blink: randomized interval between blinks
+#define BLINK_MAX_MS      6000
+#define BLINK_DURATION_MS 300    // must be >= 1000/OLED_REFRESH_HZ or a refresh could miss it entirely
+#define SNORE_INTERVAL_MS 3500   // how often to play the snore sound while sleepy
+
 // ---------- SHARP GP2Y0A41SK0F IR distance sensor (4-30 cm, ANALOG) ----------
 // MUST use an ADC1 pin (GPIO 32-39) because ADC2 is unusable while WiFi is on.
 // GPIO 32 was freed by moving PIN_PWMB to GPIO 17 (see above).
-#define ENABLE_SHARP     1
+#define ENABLE_SHARP     0     // no sensor wired yet — distance::cm() reports SHARP_FAR_CM (clear)
 #define PIN_SHARP_ADC    32        // ADC1_CH4
 #define SHARP_STOP_CM    9.0f      // HARD STOP: cut forward motion if closer than this
 #define SHARP_SLOW_CM    18.0f     // advisory: brain should slow/avoid within this
@@ -92,10 +111,11 @@
 #define PID_KP   0.020f
 #define PID_KI   0.090f
 #define PID_KD   0.0008f
-#define TARGET_RPM_AT_FULL  150.0f    // wheel rpm corresponding to linear = 1.0
+#define TARGET_RPM_AT_FULL  100.0f    // wheel rpm corresponding to linear = 1.0
+#define MAX_WHEEL_RPM       100.0f    // hard ceiling on the PID setpoint, regardless of mixing
 
 // ---------- Features ----------
-#define ENABLE_MIC_STREAMING  0       // 1 = stream INMP441 audio to backend (advanced)
+#define ENABLE_MIC_STREAMING  1       // 1 = stream INMP441 audio to backend (advanced)
 
 // ---------- Safety reflexes (use existing hardware, no extra sensor) ----------
 // Stall detection: if we command forward motion but the wheels barely turn,
@@ -107,6 +127,12 @@
 #define STALL_BACKOFF_MS     400     // reverse pulse after a stall
 // Impact detection: a sudden acceleration spike (g) = we hit something.
 #define IMPACT_G             1.8f    // total accel magnitude above this (in g) trips it
+// Shake/pickup detection: several rapid jolts in a short window (as opposed
+// to a single sharp impact) = someone picked me up and is shaking me.
+#define SHAKE_G              1.4f    // accel magnitude (g) counted as one "jolt"
+#define SHAKE_JOLT_COUNT     4       // this many jolts within SHAKE_WINDOW_MS = "being shaken"
+#define SHAKE_WINDOW_MS      1200    // max gap between jolts to still count as the same burst
+#define SHAKE_HOLD_MS        4000    // how long the dizzy reaction lasts once triggered
 
 // ---------- Voice audio over WebSocket ----------
 // Playback: backend streams PCM16 mono @ AMP_SAMPLE_RATE as binary frames.

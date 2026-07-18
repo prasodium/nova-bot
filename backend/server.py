@@ -8,6 +8,7 @@
 # =====================================================================
 import asyncio
 import json
+import time
 import contextlib
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -30,6 +31,8 @@ last_decision: dict = {}
 # voice-in capture buffer
 _voice_buf = bytearray()
 _capturing_voice = False
+_capture_started_at = 0.0
+MAX_CAPTURE_S = 6.0   # safety net: force-finalize a stuck capture (e.g. a lost voice_end)
 
 AUDIO_FRAME_BYTES = 8192   # chunk size when streaming TTS down to the robot
 
@@ -78,10 +81,22 @@ async def on_voice_end():
     if not text:
         return
     print(f"[voice] heard: {text!r}")
+    await handle_utterance(text)
 
+
+async def handle_utterance(text: str):
+    """Wake-name gate -> direct command OR conversational reply. Shared by
+    the real mic/STT path (on_voice_end) and the /voice_text test endpoint."""
     is_for_me, command = chat.addressed(text)
     if not is_for_me:
         return  # not addressed by name — ignore silently
+
+    # Fast path: a mood word -> just change expression, no movement/LLM call.
+    mood = chat.parse_direct_mood(command)
+    if mood:
+        await send_cmd(protocol.mood(mood))
+        await say(chat.MOOD_ACK.get(mood, "Okay."))
+        return
 
     # Fast path: simple movement phrase -> act immediately, short spoken ack.
     action = chat.parse_direct_command(command)
@@ -100,6 +115,8 @@ async def on_voice_end():
     # Otherwise: conversational reply (LLM, can see the camera).
     jpeg = await vision.grab_frame()
     r = await chat.reply(command, jpeg, state.telemetry)
+    if r.get("mood"):
+        await send_cmd(protocol.mood(r["mood"]))
     await say(r.get("say", ""))
     act = r.get("action")
     if act:
@@ -111,7 +128,7 @@ async def on_voice_end():
 # ---------------------------------------------------------------- WebSocket
 @app.websocket("/ws/robot")
 async def ws_robot(ws: WebSocket):
-    global robot_ws, _capturing_voice, _voice_buf
+    global robot_ws, _capturing_voice, _voice_buf, _capture_started_at
     await ws.accept()
     robot_ws = ws
     print("[ws] robot connected")
@@ -135,15 +152,27 @@ async def ws_robot(ws: WebSocket):
             mtype = data.get("type")
             if mtype == "telemetry":
                 state.update_telemetry(data)
+                # Safety net: a voice_end can be lost (e.g. a WS hiccup right as
+                # the firmware sends it), which would otherwise leave capture
+                # stuck on forever since nothing else prompts a retry.
+                if _capturing_voice and time.time() - _capture_started_at > MAX_CAPTURE_S:
+                    print("[voice] capture timed out (lost voice_end?) — finalizing")
+                    _capturing_voice = False
+                    asyncio.create_task(on_voice_end())
             elif mtype == "event":
                 name, val = data.get("name"), data.get("value")
                 print(f"[event] {name} = {val}")
                 if name == "voice_audio":
                     _capturing_voice = True
+                    _capture_started_at = time.time()
                     _voice_buf = bytearray()
                 elif name == "voice_end":
                     _capturing_voice = False
                     asyncio.create_task(on_voice_end())
+                elif name == "shaken" and val:
+                    # Firmware already reacted locally (dizzy face + sound);
+                    # only the backend can produce real speech.
+                    asyncio.create_task(say("Hey! Leave me alone, put me down!"))
                 elif name in ("blocked", "impact", "obstacle") and val:
                     pass  # the think loop / controller already reacts
             elif mtype == "ack":
@@ -154,6 +183,12 @@ async def ws_robot(ws: WebSocket):
         print("[ws] robot disconnected")
         if robot_ws is ws:
             robot_ws = None
+        # Discard any in-flight capture — a disconnect mid-utterance means we
+        # don't have the full clip anyway, and staying "stuck" would otherwise
+        # silently swallow every voice command after reconnect.
+        if _capturing_voice:
+            _capturing_voice = False
+            _voice_buf = bytearray()
 
 
 # ---------------------------------------------------------------- think loop
@@ -174,6 +209,8 @@ async def think_loop():
         last_decision = decision
         state.last_scene = decision.get("scene", "")
         print(f"[brain] {decision}")
+        if decision.get("mood"):
+            await send_cmd(protocol.mood(decision["mood"]))
         for cmd in decision_to_commands(decision, state, config.MAX_SPEED):
             await send_cmd(cmd)
         await say(decision.get("say", ""))
@@ -225,6 +262,17 @@ async def manual_stop():
 @app.post("/say")
 async def say_endpoint(payload: dict):
     await say(str(payload.get("text", "")))
+    return {"ok": True}
+
+@app.post("/voice_text")
+async def voice_text(payload: dict):
+    """Test hook: run the exact wake-name + direct-command + LLM reply pipeline
+    that real mic audio goes through, but skip STT — type the transcript instead."""
+    text = str(payload.get("text", ""))
+    if not text:
+        return {"ok": False, "error": "text required"}
+    print(f"[voice_text] heard: {text!r}")
+    await handle_utterance(text)
     return {"ok": True}
 
 

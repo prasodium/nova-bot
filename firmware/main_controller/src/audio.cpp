@@ -27,7 +27,12 @@ namespace {
       // Block up to 100 ms waiting for audio data.
       size_t got = xStreamBufferReceive(sbuf, chunk, sizeof(chunk), pdMS_TO_TICKS(100));
       if (got == 0) {
-        if (playing && xStreamBufferIsEmpty(sbuf)) playing = false;
+        // The I2S peripheral loops its DMA buffer chain when nothing new is
+        // written, so without this the tail of the last clip repeats forever.
+        if (playing && xStreamBufferIsEmpty(sbuf)) {
+          playing = false;
+          i2s_zero_dma_buffer(I2S_AMP);
+        }
         continue;
       }
       playing = true;
@@ -71,7 +76,7 @@ void audio::beginInput() {
   cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX);
   cfg.sample_rate = MIC_SAMPLE_RATE;
   cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT;   // INMP441 outputs 24-bit in 32-bit slots
-  cfg.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
+  cfg.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT;   // TEMP: diagnose which slot has signal
   cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
   cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
   cfg.dma_buf_count = 8;
@@ -121,17 +126,31 @@ void audio::beep(int freq_hz, int ms) {
   }
 }
 
+void audio::dizzySound() {
+  const int freqs[] = {600, 350, 700, 300, 550, 250};
+  for (int f : freqs) beep(f, 90);
+}
+
+void audio::snoreSound() {
+  beep(140, 250);   // low inhale
+  beep(90, 350);    // lower, longer exhale
+}
+
 size_t audio::readMic(int16_t *out, size_t maxSamples) {
 #if ENABLE_MIC_STREAMING
-  static int32_t raw[256];
-  size_t got = 0, total = 0;
+  // I2S is configured RIGHT_LEFT (stereo) even though the INMP441 is mono on
+  // the left slot: ONLY_LEFT mode misbehaves on the legacy ESP-IDF driver
+  // (reads back silence). Read interleaved [L,R,L,R,...] and keep only L.
+  static int32_t raw[512];
+  size_t total = 0;
   while (total < maxSamples) {
-    size_t want = min((size_t)256, maxSamples - total) * sizeof(int32_t);
-    i2s_read(I2S_MIC, raw, want, &got, portMAX_DELAY);
-    size_t samples = got / sizeof(int32_t);
-    for (size_t k = 0; k < samples; k++) out[total + k] = (int16_t)(raw[k] >> 14);
-    total += samples;
-    if (samples == 0) break;
+    size_t wantRawWords = min((size_t)256, maxSamples - total) * 2;
+    size_t got = 0;
+    i2s_read(I2S_MIC, raw, wantRawWords * sizeof(int32_t), &got, portMAX_DELAY);
+    size_t rawWords = got / sizeof(int32_t);
+    for (size_t k = 0; k + 1 < rawWords && total < maxSamples; k += 2)
+      out[total++] = (int16_t)(raw[k] >> 14);
+    if (rawWords == 0) break;
   }
   return total;
 #else

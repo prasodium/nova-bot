@@ -10,14 +10,14 @@ Flow (see server.on_voice_end):
 import re
 import json
 import config
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from ai import vision
 
-_client: AsyncAnthropic | None = None
-def _c() -> AsyncAnthropic:
+_client: AsyncOpenAI | None = None
+def _c() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+        _client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
     return _client
 
 
@@ -55,39 +55,71 @@ def parse_direct_command(text: str) -> str | None:
     return None
 
 
+# Mood words -> the firmware's display.h Mood enum. Checked before movement
+# commands and before the LLM (fast + free + works with WAKE_REQUIRED=false).
+_MOOD_DIRECT = [
+    (r"\b(smile|happy|be happy|cheer up|joy)\b",       "happy"),
+    (r"\b(angry|mad|be angry|furious)\b",               "angry"),
+    (r"\b(i love you|love you|show love|love)\b",       "love"),
+    (r"\b(shy|embarrassed|be shy)\b",                    "shy"),
+    (r"\b(sad|upset|be sad|cry)\b",                      "sad"),
+    (r"\b(sleepy|tired|sleep|nap)\b",                    "sleepy"),
+    (r"\b(surprised|shocked|wow|surprise)\b",            "surprised"),
+    (r"\b(dizzy|spin|spinning)\b",                        "dizzy"),
+    (r"\b(normal|neutral|calm down|reset face)\b",       "neutral"),
+]
+
+# Short spoken ack per mood for the direct (non-LLM) path.
+MOOD_ACK = {
+    "happy": "Yay!", "angry": "Hmph.", "love": "Aww, I love you too!",
+    "shy": "Oh... stop it.", "sad": "Okay...", "sleepy": "Yaaawn...", "dizzy": "Whoaaa...",
+    "surprised": "Whoa!", "neutral": "Okay.",
+}
+
+def parse_direct_mood(text: str) -> str | None:
+    """Map a simple mood phrase to a mood name, or None if it's not one."""
+    low = text.lower()
+    for pat, mood in _MOOD_DIRECT:
+        if re.search(pat, low):
+            return mood
+    return None
+
+
 SYSTEM = """You are {name}, the voice of a small two-wheeled robot. A human just spoke to you.
 You may also be given your current camera view. Answer briefly and naturally (one or two
 sentences), as if speaking aloud, and you may refer to yourself as {name}. If the human
 asked you to move, set an action. Safety first: never drive forward if something is close
-ahead (check distance_cm in telemetry).
+ahead (check distance_cm in telemetry). Also pick a mood/expression for your face that
+fits the tone of your reply and what the human said.
 
 Reply with ONLY JSON, no markdown:
-{{"say": string, "action": "forward"|"backward"|"left"|"right"|"turn_around"|"stop"|null, "speed": number 0..1}}"""
+{{"say": string, "action": "forward"|"backward"|"left"|"right"|"turn_around"|"stop"|null,
+  "speed": number 0..1,
+  "mood": "neutral"|"happy"|"angry"|"love"|"shy"|"sad"|"sleepy"|"surprised"|"dizzy"}}"""
 
 async def reply(transcript: str, jpeg: bytes | None, telemetry: dict) -> dict:
-    fallback = {"say": "Sorry, I didn't catch that.", "action": None, "speed": 0.0}
-    if not config.ANTHROPIC_API_KEY:
+    fallback = {"say": "Sorry, I didn't catch that.", "action": None, "speed": 0.0, "mood": "neutral"}
+    if not config.OPENAI_API_KEY:
         return fallback
-    content = []
+    content = [{"type": "text",
+               "text": f'The human said: "{transcript}". Telemetry: {json.dumps(telemetry)}'}]
     if jpeg:
-        content.append({"type": "image", "source": {
-            "type": "base64", "media_type": "image/jpeg", "data": vision.to_base64(jpeg)}})
-    content.append({"type": "text",
-                    "text": f'The human said: "{transcript}". Telemetry: {json.dumps(telemetry)}'})
+        content.append({"type": "image_url", "image_url": {
+            "url": f"data:image/jpeg;base64,{vision.to_base64(jpeg)}"}})
     try:
-        msg = await _c().messages.create(
+        msg = await _c().chat.completions.create(
             model=config.AI_MODEL, max_tokens=config.AI_MAX_TOKENS,
-            system=SYSTEM.format(name=config.ROBOT_NAME),
-            messages=[{"role": "user", "content": content}])
-        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text.lower().startswith("json"): text = text[4:]
-        s, e = text.find("{"), text.rfind("}")
-        d = json.loads(text[s:e + 1])
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM.format(name=config.ROBOT_NAME)},
+                {"role": "user", "content": content},
+            ])
+        text = msg.choices[0].message.content.strip()
+        d = json.loads(text)
         return {"say": str(d.get("say", ""))[:200],
                 "action": (d.get("action") or None),
-                "speed": float(d.get("speed", 0.4))}
+                "speed": float(d.get("speed", 0.4)),
+                "mood": str(d.get("mood") or "neutral")}
     except Exception as ex:
         print(f"[chat] reply failed: {ex}")
         return fallback

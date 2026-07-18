@@ -54,6 +54,7 @@ void comms::begin() {
 
 void comms::loop() { ws.loop(); }
 bool comms::connected() { return wsConnected; }
+String comms::localIP() { return WiFi.localIP().toString(); }
 void comms::onCommand(std::function<void(const String&)> cb) { cmdCb = cb; }
 void comms::onBinary(std::function<void(const uint8_t*, size_t)> cb) { binCb = cb; }
 void comms::sendBinary(const uint8_t *data, size_t len) {

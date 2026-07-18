@@ -15,7 +15,7 @@
 namespace {
   inline int duty(float s) {
     s = constrain(s, -1.0f, 1.0f);
-    return (int)(fabsf(s) * PWM_MAX);
+    return (int)(fabsf(s) * PWM_MAX_DUTY);
   }
 
 #if defined(MOTOR_DRIVER_DRV8833)

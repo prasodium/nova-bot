@@ -6,20 +6,21 @@ Decision schema the model must return:
   "scene":  "<one short sentence describing what the robot sees>",
   "action": "forward|backward|left|right|turn_around|stop",
   "speed":  0.0-1.0,
-  "say":    "<optional short sentence to speak, or empty string>"
+  "say":    "<optional short sentence to speak, or empty string>",
+  "mood":   "neutral|happy|angry|love|shy|sad|sleepy|surprised"
 }
 """
 import json
 import config
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from ai import vision
 
-_client: AsyncAnthropic | None = None
+_client: AsyncOpenAI | None = None
 
-def _client_lazy() -> AsyncAnthropic:
+def _client_lazy() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+        _client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
     return _client
 
 SYSTEM_PROMPT = """You are the navigation brain of a small two-wheeled robot car.
@@ -36,11 +37,16 @@ SAFETY RULES (highest priority):
   If it is below ~15, something is right in front — do NOT go forward; turn instead.
 - Prefer small, cautious moves and lower speed in cluttered scenes.
 
+Also pick a mood/expression for your face that fits the scene (e.g. "surprised"
+for something unexpected, "angry" or "surprised" when blocked, "happy" when
+clear and exploring well, "sleepy" when idle/stopped with nothing going on).
+
 Reply with ONLY a JSON object, no prose, no markdown fences:
-{"scene": string, "action": "forward"|"backward"|"left"|"right"|"turn_around"|"stop", "speed": number 0..1, "say": string}
+{"scene": string, "action": "forward"|"backward"|"left"|"right"|"turn_around"|"stop", "speed": number 0..1, "say": string,
+ "mood": "neutral"|"happy"|"angry"|"love"|"shy"|"sad"|"sleepy"|"surprised"|"dizzy"}
 Keep "scene" under 15 words. Keep "say" empty unless something is worth announcing."""
 
-_FALLBACK = {"scene": "uncertain", "action": "stop", "speed": 0.0, "say": ""}
+_FALLBACK = {"scene": "uncertain", "action": "stop", "speed": 0.0, "say": "", "mood": "neutral"}
 
 def _extract_json(text: str) -> dict:
     text = text.strip()
@@ -58,6 +64,7 @@ def _extract_json(text: str) -> dict:
             "action": str(d.get("action", "stop")).lower(),
             "speed": float(d.get("speed", 0.4)),
             "say": str(d.get("say", ""))[:200],
+            "mood": str(d.get("mood") or "neutral"),
         }
     except Exception as e:
         print(f"[planner] bad JSON from model ({e}): {text[:120]!r}")
@@ -65,8 +72,8 @@ def _extract_json(text: str) -> dict:
 
 async def decide(jpeg: bytes, telemetry: dict, goal: str) -> dict:
     """Run one perception->decision step. Returns a decision dict."""
-    if not config.ANTHROPIC_API_KEY:
-        print("[planner] no ANTHROPIC_API_KEY set — returning stop")
+    if not config.OPENAI_API_KEY:
+        print("[planner] no OPENAI_API_KEY set — returning stop")
         return dict(_FALLBACK)
 
     tele = {k: telemetry.get(k) for k in
@@ -77,21 +84,20 @@ async def decide(jpeg: bytes, telemetry: dict, goal: str) -> dict:
                  f"Decide the next move. JSON only.")
 
     try:
-        msg = await _client_lazy().messages.create(
+        msg = await _client_lazy().chat.completions.create(
             model=config.AI_MODEL,
             max_tokens=config.AI_MAX_TOKENS,
-            system=SYSTEM_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "image",
-                     "source": {"type": "base64", "media_type": "image/jpeg",
-                                "data": vision.to_base64(jpeg)}},
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": [
                     {"type": "text", "text": user_text},
-                ],
-            }],
+                    {"type": "image_url", "image_url": {
+                        "url": f"data:image/jpeg;base64,{vision.to_base64(jpeg)}"}},
+                ]},
+            ],
         )
-        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        text = msg.choices[0].message.content
         return _extract_json(text)
     except Exception as e:
         print(f"[planner] LLM call failed: {e}")

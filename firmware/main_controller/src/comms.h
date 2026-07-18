@@ -7,6 +7,7 @@ namespace comms {
   void begin();
   void loop();
   bool connected();
+  String localIP();   // valid once begin() returns (it blocks until WiFi joins)
   void sendTelemetry(float heading, float pitch, float roll,
                      float lrpm, float rrpm, long lt, long rt, bool tiltFault, bool blocked, float distanceCm);
   void sendAck(uint32_t cmdId, bool ok);

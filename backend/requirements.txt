@@ -2,7 +2,7 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 websockets==14.1
 httpx==0.28.1
-anthropic==0.42.0
+openai==1.109.1
 python-dotenv==1.0.1
 pydantic==2.10.4
 numpy==2.2.1
@@ -14,4 +14,5 @@ pyttsx3==2.98
 # piper-tts==1.2.0
 
 # --- Voice IN (STT). Only needed if STT_MODE=whisper + ENABLE_MIC_STREAMING=1 ---
-# faster-whisper==1.1.0
+faster-whisper==1.1.0
+requests==2.34.2   # faster-whisper's model downloader needs this; not pulled in transitively

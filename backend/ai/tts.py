@@ -13,6 +13,7 @@ All engines return little-endian signed 16-bit PCM, mono, at OUT_RATE.
 import io
 import os
 import wave
+import uuid
 import asyncio
 import config
 
@@ -33,28 +34,57 @@ def _resample_pcm16(data: bytes, src_rate: int, dst_rate: int) -> bytes:
     return y.astype("<i2").tobytes()
 
 
+def _read_wav_pcm16(path: str) -> tuple[int, bytes]:
+    with wave.open(path, "rb") as w:
+        rate = w.getframerate()
+        ch = w.getnchannels()
+        frames = w.readframes(w.getnframes())
+    if ch == 2:  # downmix stereo -> mono
+        import numpy as np
+        a = np.frombuffer(frames, dtype="<i2").reshape(-1, 2).mean(axis=1)
+        frames = a.astype("<i2").tobytes()
+    return rate, frames
+
+
+def _macos_say(text: str) -> bytes | None:
+    """macOS: shell out to the built-in `say` CLI instead of pyttsx3's nsss
+    driver, which crashes against this system's PyObjC bridge and (even when
+    it doesn't crash) writes AIFF data regardless of the .wav filename given.
+    `say --data-format` can emit real PCM16 WAV directly, so this is also
+    simpler than the pyttsx3 path."""
+    import subprocess
+    tmp = os.path.join(os.path.dirname(__file__), f"_tts_tmp_{uuid.uuid4().hex}.wav")
+    try:
+        p = subprocess.run(["say", "-o", tmp, f"--data-format=LEI16@{OUT_RATE}", text],
+                           capture_output=True)
+        if p.returncode != 0:
+            print(f"[tts] macOS say failed: {p.stderr.decode()[:200]}")
+            return None
+        rate, frames = _read_wav_pcm16(tmp)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return _resample_pcm16(frames, rate, OUT_RATE)
+
+
 def _pyttsx3(text: str) -> bytes | None:
+    import sys
+    if sys.platform == "darwin":
+        return _macos_say(text)
     try:
         import pyttsx3
     except ImportError:
         print("[tts] pyttsx3 not installed (pip install pyttsx3)")
         return None
-    tmp = os.path.join(os.path.dirname(__file__), "_tts_tmp.wav")
+    tmp = os.path.join(os.path.dirname(__file__), f"_tts_tmp_{uuid.uuid4().hex}.wav")
     engine = pyttsx3.init()
     engine.save_to_file(text, tmp)
     engine.runAndWait()
     try:
-        with wave.open(tmp, "rb") as w:
-            rate = w.getframerate()
-            ch = w.getnchannels()
-            frames = w.readframes(w.getnframes())
+        rate, frames = _read_wav_pcm16(tmp)
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
-    if ch == 2:  # downmix stereo -> mono
-        import numpy as np
-        a = np.frombuffer(frames, dtype="<i2").reshape(-1, 2).mean(axis=1)
-        frames = a.astype("<i2").tobytes()
     return _resample_pcm16(frames, rate, OUT_RATE)
 
 
